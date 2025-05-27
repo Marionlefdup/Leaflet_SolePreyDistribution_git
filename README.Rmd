@@ -1,0 +1,378 @@
+
+---
+title: "LeafletMap_SolePreySevern_MLP"
+author: "Marion Lefebvre du Prey"
+date: "2025-02-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+```
+
+
+```{r Packages and workspace, include=F, echo=F}
+# Clear the working space
+rm(list = ls())
+
+# Load all the packages
+library(tidyverse)
+library(readxl)
+library(sf)
+library(sp)
+library(leaflet)
+library(RColorBrewer)
+library(leafpop)
+library(kableExtra)
+
+```
+
+  
+
+```{r Load files, echo=FALSE, include=F}
+
+# Import data
+
+# habitat per station (based on Level 3 EUNIS classification, data from NE)
+Habitat_EUNIS_L3_per_station <- read_csv("C:/Users/mlefebvreduprey/OneDrive - University of Plymouth/PhD_Marion/Prey_data_Severn_analysis/Prey_data_Severn_analysis_R/Input/Habitat_EUNIS_L3_per_station.csv")
+
+# Habitat types as shapefile 
+shapefile_path = "C:/Users/mlefebvreduprey/OneDrive - University of Plymouth/PhD_Marion/Prey_data_Severn_analysis/Prey_data_Severn_analysis_R/Input/Habitats_EUNISL3.shp"
+habitats_brut <- st_read(shapefile_path)
+
+# Stations, dates and location of sampling during Autumn 2015
+Stations_2015_brut <- read_excel("C:/Users/mlefebvreduprey/OneDrive - University of Plymouth/PhD_Marion/Prey_data_Severn_analysis/Prey_data_Severn_analysis_R/Input/IBM/Sampled_positions_2015.xlsx")
+
+# Stations, dates and location of sampling during Spring 2016
+Stations_2016_brut <- read_excel("C:/Users/mlefebvreduprey/OneDrive - University of Plymouth/PhD_Marion/Prey_data_Severn_analysis/Prey_data_Severn_analysis_R/Input/IBM/Sampled_positions_2016.xlsx")
+
+# Results of clustering analyses (found in code Prey_data_Severn_analysis_Marion.R)
+Clusters <- read_csv("C:/Users/mlefebvreduprey/OneDrive - University of Plymouth/PhD_Marion/Prey_data_Severn_analysis/Prey_data_Severn_analysis_R/Output/ClustersPositions.csv")
+
+# Habitat types 
+shapefile_path = "C:/Users/mlefebvreduprey/OneDrive - University of Plymouth/PhD_Marion/Prey_data_Severn_analysis/Prey_data_Severn_analysis_R/Input/Habitats_EUNISL3.shp"
+habitats_brut <- st_read(shapefile_path)
+habs <- habitats_brut %>% select(geometry, Eunis_L3) %>% filter(Eunis_L3 %in%c("A2.2","A2.3","A2.4","A2.6","A2.7","A5.2","A5.3"))
+
+habs[which(habs$Eunis_L3 == "A2.2"),]$Eunis_L3 = as.character("A2.2 Littoral sand and sandy mud")
+habs[which(habs$Eunis_L3 == "A2.3"),]$Eunis_L3 = as.character("A2.3 Littoral mud")
+habs[which(habs$Eunis_L3 == "A2.4"),]$Eunis_L3 = as.character("A2.4 Littoral mixed sediments")
+habs[which(habs$Eunis_L3 == "A2.6"),]$Eunis_L3 = as.character("A2.6 Littoral seagrass beds")
+habs[which(habs$Eunis_L3 == "A2.7"),]$Eunis_L3 = as.character("A2.7 Littoral biogenic reefs")
+habs[which(habs$Eunis_L3 == "A5.2"),]$Eunis_L3 = as.character("A5.2 Sublittoral sand")
+habs[which(habs$Eunis_L3 == "A5.3"),]$Eunis_L3 = as.character("A5.3 Sublittoral mud")
+
+
+# Data for macrobenthic intertidal taxa from both sampling campaigns (2015 and 2016)
+Lengths_AFDM_brut <- read_excel("C:/Users/mlefebvreduprey/OneDrive - University of Plymouth/PhD_Marion/Prey_data_Severn_analysis/Prey_data_Severn_analysis_R/Input/IBM/Data_lengths_AFDM.xlsx")
+
+```
+
+
+
+```{r format stations data, echo=F, include=F}
+Stations_2015 <- Stations_2015_brut %>%
+  dplyr::select(c(1,3,4,5,7,8)) %>%
+  mutate(IBM_Station = as.factor(IBM_Station),
+         WFD_Station = as.factor(WFD_Station),
+         Date = as.Date(Date, format="%Y/%M/%d")) %>%
+  rename (Elevation_2015 = Elevation)
+
+
+Stations_2016 <- Stations_2016_brut %>%
+  select(c(1,2,3,4,6,7)) %>%
+  mutate(IBM_Station = as.factor(IBM_Station),
+         WFD_Station = as.factor(WFD_Station), 
+         Date = as.Date(Date, format="%Y/%M/%d"))%>%
+  rename(Elevation_2016 = Elevation)
+
+# Create a merged table with 2015 and 2016
+Stations_2016 <- Stations_2016 %>% mutate(sampled_in_2016 = "yes") #Add a column for stations sampled in 2016
+
+Stations_2015_2016 <- merge(Stations_2015, Stations_2016 %>% select(c(1,3,4,7)),by=("IBM_Station"), all.x=T)%>% 
+  rename(Date_2015 = Date.x,
+         Date_2016=Date.y) %>% mutate(sampled_in_2016 = if_else(is.na(sampled_in_2016), "no", sampled_in_2016))
+
+```
+
+
+```{r format fauna data, echo=F, include=F}
+Fauna <- Lengths_AFDM_brut %>% select(c(1,2,3,4,6,7,8,9,10,13,15,17,21)) %>% 
+  rename("Corrected_AFDM" = "Corrected AFDM")  %>%
+  mutate(Year=as.factor(Year),
+         IBM_Station=as.factor(IBM_Station),
+         Length = as.numeric(Length), 
+         Corrected_AFDM = as.numeric(Corrected_AFDM, scientific=F)) %>%
+  mutate(Length = Length/1000) #length as mm instead of um
+
+Fauna_solea <- Fauna %>% 
+  filter (Class != "Insecta", Class != "Polyplacophora") %>% # remove insects and polyplaco
+  filter (Phylum != "Chordata") %>% # remove fishes
+  filter(Length < 16 | is.na(Length) == T) %>% # select <16 mm only, but also keep taxa for which lentgh is unknown
+  filter(Corrected_AFDM < 0.1) %>% # remove taxa for which g AFDM is > 0.1g
+  mutate(Corrected_AFDM = as.numeric(Corrected_AFDM, scientific=F))
+
+#Select the rare taxa (only present once in the dataset), and remove the, from Fauna_solea
+rare_taxa <- Fauna_solea %>% group_by(Species_Name) %>%
+                       summarize(count=n()) %>%
+                       filter(count==1) %>% 
+                       select(1)
+
+Fauna_solea <- Fauna_solea %>% filter(!Species_Name %in% rare_taxa$Species_Name, 
+                                      Species_Name != "Patella depressa")
+```
+
+ 
+
+```{r density diversity and biomass, echo=F, include=F}
+#DENSITY
+# count of individuals for each taxa per station
+Abundance_solea_2015 <- Fauna_solea %>% filter(Year=="2015") %>%
+  group_by(IBM_Station, Species_Name) %>%
+  summarize(abundance = n())
+
+Abundance_solea_2016 <- Fauna_solea %>% filter(Year=="2016") %>%
+  group_by(IBM_Station, Species_Name) %>%
+  summarize(abundance = n())
+
+#Add total abundance per station per year
+Abundance_solea_2015 <- Abundance_solea_2015 %>% group_by(IBM_Station) %>% mutate(abundance_total = sum(abundance)) %>% mutate(Year = "2015")
+Abundance_solea_2016 <- Abundance_solea_2016 %>% group_by(IBM_Station) %>% mutate(abundance_total = sum(abundance)) %>% mutate(Year = "2016")
+
+Abundance_solea <- rbind(Abundance_solea_2015, Abundance_solea_2016)
+
+##  Add stations positons ----
+Abundance_tot_per_station_solea <- merge(Abundance_solea, Stations_2015_2016, by=c("IBM_Station"))
+
+## DIVERSITY
+# Calculate diversity of taxa 
+Diversity_solea <- Abundance_solea %>% group_by(IBM_Station,Year)%>%
+  filter(Species_Name != "Afaunal") %>%
+  summarize(count = n()) 
+
+Diversity_per_Station_solea <- merge(Diversity_solea, Stations_2015_2016, by=(c("IBM_Station")))
+
+## BIOMASS
+Biomass_solea <- Fauna_solea %>% mutate(Corrected_AFDM = ifelse(Corrected_AFDM == "-", NA, Corrected_AFDM)) %>%  # change "-" for NA in the table
+  mutate(Corrected_AFDM = as.numeric(Corrected_AFDM), 
+         Biomass = Corrected_AFDM / Area_Sampled_m2) %>% # from AFDm to biomass (gAFDM per m2)) %>% # as.numeric
+  na.omit() %>% # remove NAs
+  group_by(IBM_Station, Year) %>%
+  summarize(sum_Biomass = sum(Biomass)) # calculate tot AFDM per station per year
+
+# merge with stations to get spatial information
+Biomass_per_station_solea <- merge(Biomass_solea, Stations_2015_2016)
+
+```
+
+
+```{r Final DF, echo=F, include=F}
+FinalDF <- merge(Biomass_per_station_solea %>% select(c(IBM_Station, Year, sum_Biomass, Latitude, Longitude)), 
+                 Abundance_tot_per_station_solea %>% select(c(IBM_Station, Year, abundance,abundance_total, Latitude, Longitude)),
+                 by=c("IBM_Station","Year","Latitude","Longitude"))
+
+FinalDF <- merge(FinalDF, Diversity_per_Station_solea %>% select(c(IBM_Station, Year, Latitude, Longitude, count)), 
+by=c("IBM_Station","Year","Latitude","Longitude"))
+
+FinalDF <- merge(FinalDF, Clusters, by=c("IBM_Station","Latitude","Longitude")) %>% mutate(Cluster = as.character(Cluster))
+```
+
+
+```{r scale sizes, include=F}
+
+scale_size_Biomass <- FinalDF[,c("Year", "IBM_Station", "sum_Biomass")] %>% 
+  group_by(IBM_Station, Year) %>% summarize(Biomass = mean(sum_Biomass)) %>% mutate(Scale_Biomass = 1) %>% arrange(Biomass)
+
+for (i in 1:(nrow(scale_size_Biomass)-1)){
+  scale_size_Biomass[i+1, "Scale_Biomass"] <- scale_size_Biomass[i, "Scale_Biomass"] + 9 / nrow(scale_size_Biomass)
+}
+
+
+
+# scale_size_Diversity <- FinalDF[, c("Year", "IBM_Station", "count")] %>% 
+#   group_by(IBM_Station, Year) %>% 
+#   summarize(Diversity = mean(count), .groups = "drop") %>% 
+#   mutate(Scale_Diversity = 1) %>% 
+#   arrange(Diversity)
+# 
+# # Fix: Start from i = 2 to avoid index 0
+# for (i in 2:nrow(scale_size_Diversity)) {
+#   if (scale_size_Diversity[[i, "Diversity"]] != scale_size_Diversity[[i - 1, "Diversity"]]) {
+#     scale_size_Diversity[[i, "Scale_Diversity"]] <- scale_size_Diversity[[i - 1, "Scale_Diversity"]] + 15 / length(unique(scale_size_Diversity$Diversity))
+#   } else {
+#     scale_size_Diversity[[i, "Scale_Diversity"]] <- scale_size_Diversity[[i - 1, "Scale_Diversity"]]
+#   }
+# }
+
+
+
+# Then add the scale columns to the FinalDF
+FinalDF <- merge(FinalDF, scale_size_Biomass %>% select(c("IBM_Station", "Scale_Biomass", "Year")), by = c("IBM_Station", "Year"), all.x = T)
+# FinalDF <- merge(FinalDF, scale_size_Diversity %>% select(c("IBM_Station", "Scale_Diversity")), by="IBM_Station", all.x = T)
+``` 
+
+
+```{r map, echo=F, include=F}
+#Create the basemap (with World StreetMap or World Imagery to be able to choose)
+map <- leaflet(FinalDF) %>%
+  addTiles(group = "OSM (default)") %>%
+  addProviderTiles(provider = "Esri.WorldStreetMap", group = "World StreetMap")
+  # addProviderTiles(provider = "Esri.WorldImagery", group = "World Imagery")
+
+# Define circles size scale for points
+scale_size <- function(x) {
+  min_size <- 3
+  max_size <- 10
+  return(min_size + (max_size - min_size) * (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)))
+}
+
+# Define colors palette for points
+pal_abundance <- colorNumeric("Greys", domain = FinalDF$abundance_total)
+pal_diversity <- colorNumeric("Greys", domain = FinalDF$count)
+pal_biomass <- colorNumeric("Greys", domain = FinalDF$sum_Biomass)
+# Créer une palette de couleurs pour les clusters
+pal_cluster <- colorFactor(palette = "Set1", domain = FinalDF$Cluster)
+
+
+# Define colors for habitats
+habitat_colors <- c(
+  "A2.2 Littoral sand ans sandy mud" = "darkorchid", 
+  "A2.3 Littoral mud" = "red",
+  "A2.4 Littoral mixed sediments" = "darkgrey",
+  "A2.6 Littoral seagrass beds" = "#17BECF",
+  "A2.7 Littoral biogenic reefs" = "darkblue",
+  "A5.2 Sublittoral sand" = "aquamarine3",
+  "A5.3 Sublittoral mud" = "#8c6d31"
+)
+
+# Create palette
+pal_habs <- colorFactor(palette = habitat_colors, domain = habs$Eunis_L3)
+
+  
+  # --- Add stations sampled ---
+map <- map %>%
+  addCircleMarkers(
+    data = FinalDF,
+    ~Longitude, ~Latitude,
+    radius = 4,  # Taille fixe pour les stations
+    color = "black",  # Contour noir pour bien les voir
+    fillColor = "white",  # Remplissage blanc pour contraste
+    fillOpacity = 1,  # Complètement opaque
+    stroke = TRUE,  # Bordure activée
+    weight = 1,  # Épaisseur de la bordure
+    popup = ~paste("<strong>Station: </strong>", IBM_Station),  # Afficher le numéro de station
+    group = "Stations"  # Nouveau groupe pour les stations
+  ) %>%
+
+  # --- Add circles for Diversity ---
+  addCircleMarkers(
+    data = FinalDF[FinalDF$Year == 2015, ],
+    ~Longitude, ~Latitude,
+    radius = ~count,
+    color = ~"black",
+    fillColor = ~pal_diversity(count),
+    fillOpacity = 0.8,
+    stroke = TRUE,weight=0.8,
+    popup = ~paste("<strong>Station: </strong>", IBM_Station, "<br>",
+                   "<strong>Diversity (count): </strong>", count,"<br><strong>Cluster: </strong>", Cluster),
+    group = "2015_Diversity"
+  ) %>%
+  
+  addCircleMarkers(
+    data = FinalDF[FinalDF$Year == 2016, ],
+    ~Longitude, ~Latitude,
+    radius = ~count,
+    color = ~"black",
+    fillColor = ~pal_diversity(count),
+    fillOpacity = 0.8,
+    stroke = TRUE,weight=0.8,
+    popup = ~paste("<strong>Station: </strong>", IBM_Station, "<br>",
+                   "<strong>Diversity (count): </strong>", count,"<br><strong>Cluster: </strong>", Cluster),
+    group = "2016_Diversity"
+  ) %>%
+
+  # --- Add circles for Biomass ---
+  addCircleMarkers(
+    data = FinalDF[FinalDF$Year == 2015, ],
+    ~Longitude, ~Latitude,
+    radius = ~Scale_Biomass,
+    color = ~"black",
+    fillColor = ~pal_biomass(sum_Biomass),
+    fillOpacity = 0.8,
+    stroke = TRUE,weight=0.8,
+    popup = ~paste("<strong>Station: </strong>", IBM_Station, "<br>",
+                   "<strong>Biomass (g/m²): </strong>", round(sum_Biomass,1),"<br><strong>Cluster: </strong>", Cluster),
+    group = "2015_Biomass"
+  ) %>%
+  
+  addCircleMarkers(
+    data = FinalDF[FinalDF$Year == 2016, ],
+    ~Longitude, ~Latitude,
+    radius = ~Scale_Biomass,
+    color = ~"black",
+    fillColor = ~pal_biomass(sum_Biomass),
+    fillOpacity = 0.8,
+    stroke = TRUE,weight=0.8,
+    popup = ~paste("<strong>Station: </strong>", IBM_Station, "<br>",
+                   "<strong>Biomass (g/m²): </strong>", round(sum_Biomass,1),"<br><strong>Cluster: </strong>", Cluster),
+    group = "2016_Biomass"
+  ) %>%
+  
+  #--- Add circles for clusters
+  addCircleMarkers(
+    data = FinalDF,
+    ~Longitude, ~Latitude,
+    radius = ~4,
+    color = ~"black",
+    fillColor = ~pal_cluster(Cluster),
+    fillOpacity = 0.8,
+    stroke = TRUE,weight=0.8,
+    popup = ~paste("<strong>Station: </strong>", IBM_Station, "<br>",
+                   "<br><strong>Cluster: </strong>", Cluster),
+    group = "Cluster"
+  ) %>%
+  
+  # --- Add the polygons of habitats EUNIS_L3 ---
+  addPolygons(
+    data = habs,  # Ton shapefile des habitats
+    fillColor = ~pal_habs(Eunis_L3),  # Couleur en fonction de la catégorie d'habitat
+    color = "black",  # Bordure noire pour bien voir les limites
+    weight = 1,  # Épaisseur des bordures
+    fillOpacity = 0.6,  # Opacité des zones colorées
+    popup = ~paste("<strong>Habitat: </strong>", Eunis_L3), 
+    group = "Habitats"
+  )%>%
+
+  # --- Add layers control ---
+  addLayersControl(
+    overlayGroups = c(
+      # "2015_Abundance", "2016_Abundance",
+                      "Stations","2015_Diversity", "2016_Diversity",
+                      "2015_Biomass", "2016_Biomass", "Habitats", "Cluster"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  
+
+  # --- Add legends ---
+   addLegend("bottomright", pal = pal_habs, values = habs$Eunis_L3,
+            title = "Habitats", opacity = 0.6, group = "Habitats")%>%
+    addLegend("bottomleft", pal=pal_cluster, values=FinalDF$Cluster, 
+              title="Cluters", opacity=1, group="Cluster") %>%
+  addLegend("bottomleft", pal=pal_biomass, values=FinalDF$sum_Biomass, title="Biomass (gAFDM/m2)", opacity=1, group="2015_Biomass" ) %>%
+  addLegend("bottomleft", pal=pal_biomass, values=FinalDF$sum_Biomass, title="Biomass (gAFDM/m2)", opacity=1, group="2016_Biomass" )%>%
+  addLegend("bottomleft", pal=pal_diversity, values=FinalDF$count, title="Diversity (taxa/m2)", opacity=1, group="2015_Diversity" ) %>%
+  addLegend("bottomleft", pal=pal_diversity, values=FinalDF$count, title="Diversity (taxa/m2)", opacity=1, group="2016_Diversity" ) %>%
+  
+  # Hide layers when user opens the html
+  hideGroup(c(
+    # "2015_Abundance", "2016_Abundance",
+              "2015_Diversity", "2016_Diversity",
+              "2015_Biomass", "2016_Biomass", "Habitats", "Stations", "Cluster"))
+
+
+
+```
+
+```{r display map}
+map
+```
