@@ -369,8 +369,6 @@ map <- map %>%
               "2015_Diversity", "2016_Diversity",
               "2015_Biomass", "2016_Biomass", "Habitats", "Stations", "Cluster"))
 
-
-
 ```
 
 ```{r display map}
