@@ -3,7 +3,7 @@
 title: "LeafletMap_SolePreySevern_MLP"
 author: "Marion Lefebvre du Prey"
 date: "2025-02-14"
-output: github_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -363,7 +363,7 @@ map <- map %>%
   addLegend("bottomleft", pal=pal_diversity, values=FinalDF$count, title="Diversity (taxa/m2)", opacity=1, group="2015_Diversity" ) %>%
   addLegend("bottomleft", pal=pal_diversity, values=FinalDF$count, title="Diversity (taxa/m2)", opacity=1, group="2016_Diversity" ) %>%
   
-  # Hide layers when user opens the html
+  # Hide layers when user opens the map
   hideGroup(c(
     # "2015_Abundance", "2016_Abundance",
               "2015_Diversity", "2016_Diversity",
