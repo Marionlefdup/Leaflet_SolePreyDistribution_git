@@ -1,9 +1,0 @@
----
-title: "Map Viewer"
-output: html_document
----
-
-## My Leaflet Map
-
-<iframe src="https://marionlefdup.github.io/Leaflet_SolePreyDistribution_git/"
-        width="100%" height="600px" style="border:none;"></iframe>
