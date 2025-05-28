@@ -212,7 +212,7 @@ FinalDF <- merge(FinalDF, scale_size_Biomass %>% select(c("IBM_Station", "Scale_
 ``` 
 
 
-```{r map, echo=F, include=F}
+```{r map, include =F, echo=F}
 #Create the basemap (with World StreetMap or World Imagery to be able to choose)
 map <- leaflet(FinalDF) %>%
   addTiles(group = "OSM (default)") %>%
@@ -368,9 +368,9 @@ map <- map %>%
     # "2015_Abundance", "2016_Abundance",
               "2015_Diversity", "2016_Diversity",
               "2015_Biomass", "2016_Biomass", "Habitats", "Stations", "Cluster"))
-
 ```
 
 ```{r display map}
 map
 ```
+
